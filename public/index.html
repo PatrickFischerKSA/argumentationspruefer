@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="de-CH">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Argumentationsprüfer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">Schreiben, prüfen, verbessern</p>
+        <h1>Argumentationsprüfer für deutschsprachige Texte</h1>
+        <p class="hero-copy">
+          Lade einen Text hoch oder füge ihn direkt ein. Rechts erscheinen fachliche
+          Verbesserungsvorschläge sowie eine Rechtschreib- und Grammatikprüfung in
+          Deutschschweizer Rechtschreibung.
+        </p>
+
+        <div class="hero-actions">
+          <label class="upload-button" for="fileInput">Textdatei hochladen</label>
+          <input id="fileInput" type="file" accept=".txt,.md,.text,.html,.htm" />
+          <button id="sampleButton" type="button" class="secondary-button">
+            Beispieltext laden
+          </button>
+          <button id="analyzeButton" type="button" class="primary-button">
+            Text prüfen
+          </button>
+        </div>
+
+        <div class="hero-meta">
+          <span id="fileMeta">Noch keine Datei geladen.</span>
+          <span id="statusBadge" class="status-badge neutral">Bereit</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="editor-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Uploadbereich</p>
+              <h2>Textgrundlage</h2>
+            </div>
+            <div class="text-stats" id="textStats">
+              <span>0 Wörter</span>
+              <span>0 Sätze</span>
+              <span>0 Absätze</span>
+            </div>
+          </div>
+
+          <textarea
+            id="textInput"
+            placeholder="Füge hier eine Argumentation ein oder lade eine Textdatei hoch."
+          ></textarea>
+
+          <div class="editor-hint">
+            Unterstützte Uploads: <code>.txt</code>, <code>.md</code>, <code>.html</code>. Für
+            andere Formate kannst du den Text direkt einfügen.
+          </div>
+        </section>
+
+        <section class="results-panel">
+          <article class="result-card summary-card">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Gesamtblick</p>
+                <h2>Argumentationsanalyse</h2>
+              </div>
+              <div class="score-ring" id="scoreRing">
+                <span id="scoreValue">0</span>
+              </div>
+            </div>
+
+            <p id="summaryText" class="summary-text">
+              Nach der Prüfung erscheinen hier das Gesamturteil und die wichtigsten Prioritäten.
+            </p>
+
+            <div id="categoryGrid" class="category-grid"></div>
+          </article>
+
+          <article class="result-card">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Verbesserungsvorschläge</p>
+                <h2>Nächste Schritte</h2>
+              </div>
+            </div>
+
+            <div id="suggestionsBox" class="stack-list empty-state">
+              Noch keine Vorschläge vorhanden.
+            </div>
+
+            <h3>Formulierungshilfen</h3>
+            <div id="templatesBox" class="template-list empty-state">
+              Nach der Analyse erscheinen hier konkrete Satzbausteine.
+            </div>
+          </article>
+
+          <article class="result-card">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Rechtschreibung und Grammatik</p>
+                <h2>LanguageTool de-CH</h2>
+              </div>
+            </div>
+
+            <p id="spellcheckStatus" class="subtle-copy">
+              Noch keine Rechtschreibprüfung gestartet.
+            </p>
+            <div id="spellcheckBox" class="stack-list empty-state">
+              Treffer und Korrekturvorschläge erscheinen hier.
+            </div>
+            <p class="service-note">
+              Prüfung mit
+              <a href="https://languagetool.org/de" target="_blank" rel="noreferrer"
+                >LanguageTool</a
+              >
+              in Deutschschweizer Rechtschreibung.
+            </p>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

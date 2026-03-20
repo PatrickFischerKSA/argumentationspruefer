@@ -1,0 +1,13 @@
+{
+  "name": "argumentationspruefer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pruefungstool fuer Argumentationen mit Upload, Argumentationsanalyse und de-CH-Rechtschreibpruefung via LanguageTool.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
