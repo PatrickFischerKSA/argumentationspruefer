@@ -125,9 +125,11 @@ function escapeClassName(value) {
 
 async function readUploadedFile(file) {
   const lowerName = String(file?.name || '').toLowerCase();
+  const supportedTextExtensions = ['.txt', '.md', '.text', '.html', '.htm'];
   const isDocx =
     lowerName.endsWith('.docx') ||
     file?.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const isSupportedTextFile = supportedTextExtensions.some((extension) => lowerName.endsWith(extension));
 
   if (lowerName.endsWith('.doc') && !isDocx) {
     throw new Error('Bitte die Word-Datei zuerst als .docx speichern und dann erneut hochladen.');
@@ -142,6 +144,10 @@ async function readUploadedFile(file) {
       base64
     });
     return String(response.text || '');
+  }
+
+  if (!isSupportedTextFile) {
+    throw new Error('Unterstützt werden derzeit .txt, .md, .html und .docx.');
   }
 
   return new Promise((resolve, reject) => {

@@ -19,7 +19,7 @@
 
         <div class="hero-actions">
           <label class="upload-button" for="fileInput">Textdatei hochladen</label>
-          <input id="fileInput" type="file" accept=".txt,.md,.text,.html,.htm,.docx,.doc" />
+          <input id="fileInput" type="file" />
           <button id="sampleButton" type="button" class="secondary-button">
             Beispieltext laden
           </button>
@@ -55,8 +55,9 @@
 
           <div class="editor-hint">
             Unterstützte Uploads: <code>.txt</code>, <code>.md</code>, <code>.html</code> und
-            <code>.docx</code>. Das alte Word-Format <code>.doc</code> sollte vorher als
-            <code>.docx</code> gespeichert werden.
+            <code>.docx</code>. Andere Dateien können ausgewählt werden, werden aber nur
+            verarbeitet, wenn das Format unterstützt wird. Das alte Word-Format <code>.doc</code>
+            sollte vorher als <code>.docx</code> gespeichert werden.
           </div>
         </section>
 
