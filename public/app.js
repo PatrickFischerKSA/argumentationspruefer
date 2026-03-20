@@ -124,12 +124,44 @@ function escapeClassName(value) {
 }
 
 async function readUploadedFile(file) {
+  const lowerName = String(file?.name || '').toLowerCase();
+  const isDocx =
+    lowerName.endsWith('.docx') ||
+    file?.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+  if (lowerName.endsWith('.doc') && !isDocx) {
+    throw new Error('Bitte die Word-Datei zuerst als .docx speichern und dann erneut hochladen.');
+  }
+
+  if (isDocx) {
+    const arrayBuffer = await file.arrayBuffer();
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    const response = await postJson('/api/extract-document', {
+      fileName: file.name,
+      mimeType: file.type,
+      base64
+    });
+    return String(response.text || '');
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));
     reader.onerror = () => reject(new Error('Datei konnte nicht gelesen werden.'));
     reader.readAsText(file, 'utf-8');
   });
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+
+  return window.btoa(binary);
 }
 
 async function postJson(path, payload) {

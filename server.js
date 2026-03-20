@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
+const mammoth = require('mammoth');
 
 loadEnvFile(path.join(__dirname, '.env.local'));
 loadEnvFile(path.join(__dirname, '.env'));
@@ -85,6 +86,53 @@ app.post('/api/languagetool-check', async (req, res) => {
   } catch (error) {
     return res.status(502).json({
       error: 'LanguageTool-Pruefung fehlgeschlagen.',
+      details: error.message || 'Unbekannter Fehler'
+    });
+  }
+});
+
+app.post('/api/extract-document', async (req, res) => {
+  const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName : '';
+  const mimeType = typeof req.body?.mimeType === 'string' ? req.body.mimeType : '';
+  const base64 = typeof req.body?.base64 === 'string' ? req.body.base64 : '';
+
+  if (!base64) {
+    return res.status(400).json({ error: 'Es wurde keine Datei uebermittelt.' });
+  }
+
+  const extension = path.extname(fileName).toLowerCase();
+
+  if (extension === '.doc') {
+    return res.status(415).json({
+      error: 'Das alte Word-Format .doc wird noch nicht unterstuetzt. Bitte als .docx speichern und erneut hochladen.'
+    });
+  }
+
+  if (
+    extension !== '.docx' &&
+    mimeType !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ) {
+    return res.status(415).json({ error: 'Nur .docx-Dateien koennen hier als Word-Datei verarbeitet werden.' });
+  }
+
+  try {
+    const buffer = Buffer.from(base64, 'base64');
+    const extracted = await mammoth.extractRawText({ buffer });
+    const text = normalizeInputText(extracted.value || '');
+
+    if (!text) {
+      return res.status(422).json({
+        error: 'Aus der Word-Datei konnte kein lesbarer Text extrahiert werden.'
+      });
+    }
+
+    return res.json({
+      ok: true,
+      text
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: 'Die Word-Datei konnte nicht verarbeitet werden.',
       details: error.message || 'Unbekannter Fehler'
     });
   }
