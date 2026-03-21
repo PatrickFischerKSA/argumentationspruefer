@@ -91,6 +91,24 @@ app.post('/api/languagetool-check', async (req, res) => {
   }
 });
 
+app.post('/api/literature-check', async (req, res) => {
+  const text = normalizeInputText(req.body?.text);
+
+  if (!text) {
+    return res.status(400).json({ error: 'Es wurde kein Text zur Literaturpruefung uebermittelt.' });
+  }
+
+  try {
+    const result = await runLiteratureCheck(text);
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    return res.status(502).json({
+      error: 'Literaturverifikation fehlgeschlagen.',
+      details: error.message || 'Unbekannter Fehler'
+    });
+  }
+});
+
 app.post('/api/extract-document', async (req, res) => {
   const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName : '';
   const mimeType = typeof req.body?.mimeType === 'string' ? req.body.mimeType : '';
@@ -1063,10 +1081,550 @@ function summarizeLanguageToolMatches(matches) {
   };
 }
 
+async function runLiteratureCheck(text) {
+  const references = findReferenceCandidates(text).slice(0, 12);
+
+  if (!references.length) {
+    return {
+      references: [],
+      summary: {
+        verified: 0,
+        probable: 0,
+        uncertain: 0,
+        unverified: 0,
+        quickFeedback: 'Keine verwertbaren Literaturhinweise erkannt.',
+        topSourceTypes: []
+      }
+    };
+  }
+
+  const results = [];
+  for (const reference of references) {
+    // Sequential keeps public APIs polite and avoids rate spikes.
+    results.push(await verifyReference(reference));
+  }
+
+  return {
+    references: results,
+    summary: summarizeReferenceResults(results)
+  };
+}
+
+function findReferenceCandidates(text) {
+  const candidates = [];
+  const seen = new Set();
+
+  function pushCandidate(candidate) {
+    const key = `${candidate.type}:${normalizeReferenceKey(candidate.raw)}`;
+    if (!candidate.raw || seen.has(key)) return;
+    seen.add(key);
+    candidates.push(candidate);
+  }
+
+  const urlRegex = /\bhttps?:\/\/[^\s<>()]+/gi;
+  for (const match of text.match(urlRegex) || []) {
+    pushCandidate({
+      raw: match,
+      type: 'url',
+      url: match
+    });
+  }
+
+  const doiRegex = /\b10\.\d{4,9}\/[-._;()/:A-Z0-9]+\b/gi;
+  for (const match of text.match(doiRegex) || []) {
+    pushCandidate({
+      raw: match,
+      type: 'doi',
+      doi: match
+    });
+  }
+
+  const isbnRegex = /\b(?:ISBN(?:-1[03])?:?\s*)?((?:97[89][-\s]?)?\d(?:[-\s]?\d){8,16}[\dX])\b/gi;
+  let isbnMatch;
+  while ((isbnMatch = isbnRegex.exec(text))) {
+    const normalized = normalizeIsbn(isbnMatch[1]);
+    if (!normalized || (normalized.length !== 10 && normalized.length !== 13)) continue;
+    pushCandidate({
+      raw: isbnMatch[0],
+      type: 'isbn',
+      isbn: normalized
+    });
+  }
+
+  const inlineReferenceRegex =
+    /\b([A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’.-]+,\s*[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’.\s-]{1,40})[:.]\s*([^.\n]{4,140})\.\s*((?:19|20)\d{2})\b/g;
+  let inlineMatch;
+  while ((inlineMatch = inlineReferenceRegex.exec(text))) {
+    const title = cleanInlineText(inlineMatch[2]);
+    if (!looksLikeReferenceTitle(title)) continue;
+    pushCandidate({
+      raw: cleanInlineText(inlineMatch[0]),
+      type: 'book_candidate',
+      author: cleanInlineText(inlineMatch[1]),
+      title,
+      year: inlineMatch[3]
+    });
+  }
+
+  const lines = text.split(/\n+/).map((entry) => entry.trim()).filter(Boolean);
+  lines.forEach((line) => {
+    const parsed = parseBibliographyLine(line);
+    if (parsed) pushCandidate(parsed);
+  });
+
+  const quoteRegex = /[„"]([^"”“]{12,180})[”“"]/g;
+  let quoteMatch;
+  while ((quoteMatch = quoteRegex.exec(text))) {
+    const title = quoteMatch[1].trim();
+    if (looksLikeReferenceTitle(title)) {
+      pushCandidate({
+        raw: quoteMatch[0],
+        type: 'title_candidate',
+        title
+      });
+    }
+  }
+
+  return candidates;
+}
+
+function parseBibliographyLine(line) {
+  if (line.length < 18 || line.length > 260) return null;
+  if (/^https?:\/\//i.test(line)) return null;
+  if (/https?:\/\//i.test(line) || /\b10\.\d{4,9}\//i.test(line)) return null;
+
+  const yearMatch = line.match(/\b(19|20)\d{2}\b/);
+  const hasAuthorShape = /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’.-]+(?:,\s*[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’.-]+)?/.test(line);
+  const hasTitleMarker = /[.:]/.test(line) || /[„"].+[”“"]/.test(line);
+
+  if (!yearMatch && !hasTitleMarker) return null;
+  if (!hasAuthorShape && !/[„"].+[”“"]/.test(line)) return null;
+
+  const quotedTitle = line.match(/[„"]([^"”“]{8,180})[”“"]/);
+  let title = quotedTitle ? quotedTitle[1].trim() : '';
+
+  if (!title) {
+    const parts = line.split(/[.:]/).map((entry) => entry.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      title = parts[1];
+    } else if (line.includes(',')) {
+      const commaParts = line.split(',').map((entry) => entry.trim()).filter(Boolean);
+      if (commaParts.length >= 2) title = commaParts[1];
+    }
+  }
+
+  if (!title || !looksLikeReferenceTitle(title)) return null;
+
+  const author = parseAuthorFromLine(line);
+
+  return {
+    raw: line,
+    type: inferReferenceTypeFromLine(line),
+    title,
+    author,
+    year: yearMatch ? yearMatch[0] : ''
+  };
+}
+
+function parseAuthorFromLine(line) {
+  const beforeTitle = line.split(/[.:]/)[0].trim();
+  if (!beforeTitle || beforeTitle.split(/\s+/).length > 6) return '';
+  return beforeTitle;
+}
+
+function inferReferenceTypeFromLine(line) {
+  if (/\b(?:journal|zeitschrift|vol\.|nr\.|no\.|pp\.|seiten)\b/i.test(line)) return 'article_candidate';
+  return 'book_candidate';
+}
+
+function looksLikeReferenceTitle(title) {
+  const words = splitWords(title);
+  if (!words.length || words.length > 22) return false;
+  if (words.length === 1) return words[0].length >= 5;
+  return true;
+}
+
+function normalizeReferenceKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\s:/.-]/g, '')
+    .replace(/[.;:,)\]]+$/g, '')
+    .trim();
+}
+
+function normalizeIsbn(value) {
+  return String(value || '').replace(/[^0-9Xx]/g, '').toUpperCase();
+}
+
+async function verifyReference(reference) {
+  try {
+    if (reference.type === 'url') return await verifyUrlReference(reference);
+    if (reference.type === 'doi') return await verifyDoiReference(reference);
+    if (reference.type === 'isbn') return await verifyIsbnReference(reference);
+    return await verifyTitleReference(reference);
+  } catch (error) {
+    return {
+      raw: reference.raw,
+      type: reference.type,
+      status: 'unsicher',
+      score: 35,
+      matchedSource: null,
+      issues: [`Verifikation abgebrochen: ${error.message || 'unbekannter Fehler'}`],
+      links: []
+    };
+  }
+}
+
+async function verifyUrlReference(reference) {
+  const response = await fetchWithTimeout(reference.url, {
+    redirect: 'follow'
+  });
+
+  if (!response.ok) {
+    return finalizeReference(reference, {
+      score: 25,
+      status: 'nicht bestaetigt',
+      issues: [`URL antwortet mit HTTP ${response.status}.`]
+    });
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  const body = (await response.text()).slice(0, 30000);
+  const titleMatch = body.match(/<title[^>]*>([^<]+)<\/title>/i);
+
+  return finalizeReference(reference, {
+    score: 94,
+    status: 'verifiziert',
+    matchedSource: {
+      title: titleMatch ? cleanInlineText(titleMatch[1]) : '',
+      sourceType: 'url',
+      finalUrl: response.url,
+      contentType
+    },
+    issues: titleMatch ? [] : ['URL erreichbar, aber Seitentitel nicht eindeutig auslesbar.'],
+    links: [response.url]
+  });
+}
+
+async function verifyDoiReference(reference) {
+  const encodedDoi = encodeURIComponent(reference.doi);
+  const response = await fetchWithTimeout(`https://api.crossref.org/works/${encodedDoi}`);
+  const data = await safeJson(response);
+  const item = data?.message;
+
+  if (!item) {
+    return finalizeReference(reference, {
+      score: 30,
+      status: 'nicht bestaetigt',
+      issues: ['DOI konnte bei Crossref nicht bestaetigt werden.']
+    });
+  }
+
+  return finalizeReference(reference, {
+    score: 100,
+    status: 'verifiziert',
+    matchedSource: mapCrossrefItem(item),
+    links: buildReferenceLinks({ doi: reference.doi, url: item.URL })
+  });
+}
+
+async function verifyIsbnReference(reference) {
+  const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${reference.isbn}&format=json&jscmd=data`;
+  const response = await fetchWithTimeout(url);
+  const data = await safeJson(response);
+  const item = data?.[`ISBN:${reference.isbn}`];
+
+  if (!item) {
+    return finalizeReference(reference, {
+      score: 28,
+      status: 'nicht bestaetigt',
+      issues: ['ISBN konnte nicht bestaetigt werden.']
+    });
+  }
+
+  return finalizeReference(reference, {
+    score: 98,
+    status: 'verifiziert',
+    matchedSource: {
+      title: item.title || '',
+      author: Array.isArray(item.authors) ? item.authors.map((entry) => entry.name).join(', ') : '',
+      year: item.publish_date || '',
+      publisher: Array.isArray(item.publishers) ? item.publishers.map((entry) => entry.name).join(', ') : '',
+      sourceType: 'openlibrary'
+    },
+    links: [item.url || `https://openlibrary.org/isbn/${reference.isbn}`].filter(Boolean)
+  });
+}
+
+async function verifyTitleReference(reference) {
+  const [googleItem, crossrefItem] = await Promise.allSettled([
+    queryGoogleBooks(reference),
+    queryCrossref(reference)
+  ]);
+
+  const candidates = [];
+  if (googleItem.status === 'fulfilled' && googleItem.value) candidates.push(googleItem.value);
+  if (crossrefItem.status === 'fulfilled' && crossrefItem.value) candidates.push(crossrefItem.value);
+
+  if (!candidates.length) {
+    return finalizeReference(reference, {
+      score: 34,
+      status: 'nicht bestaetigt',
+      issues: ['Kein belastbarer Treffer in den abgefragten Literaturquellen.']
+    });
+  }
+
+  const best = candidates.sort((a, b) => b.score - a.score)[0];
+  const status =
+    best.score >= 90 ? 'verifiziert' :
+      best.score >= 70 ? 'wahrscheinlich korrekt' :
+        best.score >= 45 ? 'unsicher' : 'nicht bestaetigt';
+
+  return finalizeReference(reference, {
+    score: best.score,
+    status,
+    matchedSource: best.matchedSource,
+    issues: best.issues,
+    links: best.links
+  });
+}
+
+async function queryGoogleBooks(reference) {
+  const queryParts = [];
+  if (reference.title) queryParts.push(`intitle:${reference.title}`);
+  if (reference.author) queryParts.push(`inauthor:${reference.author}`);
+  const query = encodeURIComponent(queryParts.join(' ') || reference.raw);
+  const response = await fetchWithTimeout(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=3`);
+  const data = await safeJson(response);
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (!items.length) return null;
+
+  const mapped = items.map((entry) => {
+    const info = entry.volumeInfo || {};
+    const score = scoreReferenceMatch(reference, {
+      title: info.title || '',
+      author: Array.isArray(info.authors) ? info.authors.join(', ') : '',
+      year: String(info.publishedDate || '').slice(0, 4)
+    });
+
+    return {
+      score,
+      matchedSource: {
+        title: info.title || '',
+        author: Array.isArray(info.authors) ? info.authors.join(', ') : '',
+        year: info.publishedDate || '',
+        publisher: info.publisher || '',
+        sourceType: 'google_books'
+      },
+      issues: buildReferenceIssues(reference, {
+        title: info.title || '',
+        author: Array.isArray(info.authors) ? info.authors.join(', ') : '',
+        year: String(info.publishedDate || '').slice(0, 4)
+      }),
+      links: [info.infoLink || info.previewLink].filter(Boolean)
+    };
+  });
+
+  return mapped.sort((a, b) => b.score - a.score)[0];
+}
+
+async function queryCrossref(reference) {
+  const params = new URLSearchParams({
+    rows: '3',
+    query: reference.title || reference.raw
+  });
+  if (reference.title) params.set('query.title', reference.title);
+  if (reference.author) params.set('query.author', reference.author);
+
+  const response = await fetchWithTimeout(`https://api.crossref.org/works?${params.toString()}`);
+  const data = await safeJson(response);
+  const items = Array.isArray(data?.message?.items) ? data.message.items : [];
+  if (!items.length) return null;
+
+  const mapped = items.map((item) => {
+    const normalized = mapCrossrefItem(item);
+    const score = scoreReferenceMatch(reference, normalized);
+    return {
+      score,
+      matchedSource: {
+        ...normalized,
+        sourceType: 'crossref'
+      },
+      issues: buildReferenceIssues(reference, normalized),
+      links: buildReferenceLinks({ doi: normalized.doi, url: normalized.url })
+    };
+  });
+
+  return mapped.sort((a, b) => b.score - a.score)[0];
+}
+
+function scoreReferenceMatch(reference, candidate) {
+  let score = 20;
+  const titleSimilarity = computeTokenSimilarity(reference.title || reference.raw, candidate.title || '');
+  score += Math.round(titleSimilarity * 45);
+
+  if (reference.author) {
+    const authorSimilarity = computeTokenSimilarity(reference.author, candidate.author || '');
+    score += Math.round(authorSimilarity * 20);
+  }
+
+  if (reference.year && candidate.year) {
+    score += reference.year === String(candidate.year).slice(0, 4) ? 15 : -10;
+  }
+
+  if (reference.type === 'book_candidate' && /book|books|google_books|openlibrary/.test(candidate.sourceType || '')) {
+    score += 8;
+  }
+
+  if (reference.type === 'article_candidate' && /crossref/.test(candidate.sourceType || '')) {
+    score += 8;
+  }
+
+  return clamp(score, 0, 100);
+}
+
+function computeTokenSimilarity(a, b) {
+  const tokensA = new Set(splitWords(normalizeReferenceKey(a)));
+  const tokensB = new Set(splitWords(normalizeReferenceKey(b)));
+  if (!tokensA.size || !tokensB.size) return 0;
+
+  let overlap = 0;
+  tokensA.forEach((token) => {
+    if (tokensB.has(token)) overlap += 1;
+  });
+
+  return overlap / Math.max(tokensA.size, tokensB.size);
+}
+
+function buildReferenceIssues(reference, candidate) {
+  const issues = [];
+
+  if (reference.title && computeTokenSimilarity(reference.title, candidate.title || '') < 0.55) {
+    issues.push('Titel nur teilweise passend.');
+  }
+
+  if (reference.author && candidate.author && computeTokenSimilarity(reference.author, candidate.author) < 0.45) {
+    issues.push('Autorenschaft weicht teilweise ab.');
+  }
+
+  if (reference.year && candidate.year && reference.year !== String(candidate.year).slice(0, 4)) {
+    issues.push(`Jahr im Text (${reference.year}) weicht vom Treffer (${String(candidate.year).slice(0, 4)}) ab.`);
+  }
+
+  return issues;
+}
+
+function mapCrossrefItem(item) {
+  return {
+    title: Array.isArray(item.title) ? item.title[0] || '' : '',
+    author: Array.isArray(item.author)
+      ? item.author
+          .map((entry) => [entry.family, entry.given].filter(Boolean).join(', '))
+          .filter(Boolean)
+          .join('; ')
+      : '',
+    year: item.issued?.['date-parts']?.[0]?.[0] ? String(item.issued['date-parts'][0][0]) : '',
+    publisher: item.publisher || '',
+    doi: item.DOI || '',
+    url: item.URL || ''
+  };
+}
+
+function buildReferenceLinks(input) {
+  const links = [];
+  if (input.url) links.push(input.url);
+  if (input.doi) links.push(`https://doi.org/${input.doi}`);
+  return [...new Set(links)];
+}
+
+function finalizeReference(reference, result) {
+  return {
+    raw: reference.raw,
+    type: reference.type,
+    status: result.status || 'unsicher',
+    score: result.score || 0,
+    matchedSource: result.matchedSource || null,
+    issues: Array.isArray(result.issues) ? result.issues : [],
+    links: Array.isArray(result.links) ? result.links : []
+  };
+}
+
+function summarizeReferenceResults(results) {
+  const summary = {
+    verified: 0,
+    probable: 0,
+    uncertain: 0,
+    unverified: 0,
+    quickFeedback: '',
+    topSourceTypes: []
+  };
+
+  const sourceTypes = new Map();
+
+  results.forEach((result) => {
+    if (result.status === 'verifiziert') summary.verified += 1;
+    else if (result.status === 'wahrscheinlich korrekt') summary.probable += 1;
+    else if (result.status === 'unsicher') summary.uncertain += 1;
+    else summary.unverified += 1;
+
+    const sourceType = result.matchedSource?.sourceType || result.type;
+    sourceTypes.set(sourceType, (sourceTypes.get(sourceType) || 0) + 1);
+  });
+
+  summary.topSourceTypes = [...sourceTypes.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([name, count]) => ({ name, count }));
+
+  summary.quickFeedback =
+    summary.verified + summary.probable === 0
+      ? 'Keine Referenz konnte belastbar bestaetigt werden.'
+      : summary.unverified === 0 && summary.uncertain === 0
+        ? 'Die meisten erkannten Literaturhinweise wirken bibliografisch plausibel.'
+        : 'Ein Teil der Literaturhinweise ist bestaetigt, andere sollten bibliografisch nachgeschaerft werden.';
+
+  return summary;
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), Number(options.timeoutMs || 9000));
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'argumentationspruefer/1.0',
+        Accept: 'application/json, text/html;q=0.9, */*;q=0.8',
+        ...(options.headers || {})
+      }
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function safeJson(response) {
+  if (!response.ok) {
+    const details = (await response.text()).slice(0, 500);
+    throw new Error(`HTTP ${response.status}: ${details || response.statusText}`);
+  }
+  return response.json();
+}
+
+function cleanInlineText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
 module.exports = {
   app,
   analyzeArgumentation,
   runLanguageToolCheck,
+  runLiteratureCheck,
+  findReferenceCandidates,
   buildLanguageToolChunks,
   normalizeInputText
 };

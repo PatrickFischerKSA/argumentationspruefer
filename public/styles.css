@@ -318,6 +318,10 @@ textarea:focus {
   color: var(--muted);
 }
 
+.stack-item a {
+  word-break: break-word;
+}
+
 .priority-item {
   border-left: 4px solid rgba(166, 64, 45, 0.3);
 }

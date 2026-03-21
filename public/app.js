@@ -14,6 +14,8 @@ const suggestionsBox = document.getElementById('suggestionsBox');
 const templatesBox = document.getElementById('templatesBox');
 const spellcheckStatus = document.getElementById('spellcheckStatus');
 const spellcheckBox = document.getElementById('spellcheckBox');
+const literatureStatus = document.getElementById('literatureStatus');
+const literatureBox = document.getElementById('literatureBox');
 const paragraphBox = document.getElementById('paragraphBox');
 const sentenceBox = document.getElementById('sentenceBox');
 const styleBox = document.getElementById('styleBox');
@@ -139,6 +141,30 @@ function createSpellcheckItem(match) {
   `;
 }
 
+function createLiteratureItem(entry) {
+  const matched = entry.matchedSource || {};
+  const links = Array.isArray(entry.links) ? entry.links : [];
+  const issues = Array.isArray(entry.issues) ? entry.issues.filter(Boolean) : [];
+  const matchedLine = [matched.title, matched.author, matched.year].filter(Boolean).join(' | ');
+
+  return `
+    <article class="priority-item ${escapeClassName(mapReferenceSeverity(entry.status))}">
+      <strong>${escapeHtml(entry.raw || 'Referenz')}</strong>
+      <p>Status: ${escapeHtml(entry.status || 'unsicher')} · Score: ${escapeHtml(String(entry.score || 0))}</p>
+      ${matchedLine ? `<div class="meta-line">${escapeHtml(matchedLine)}</div>` : ''}
+      ${issues.length ? `<div class="evidence-line">${escapeHtml(issues.join(' '))}</div>` : ''}
+      ${
+        links.length
+          ? `<div class="meta-line">${links
+              .slice(0, 2)
+              .map((link) => `<a href="${escapeAttribute(link)}" target="_blank" rel="noreferrer">${escapeHtml(link)}</a>`)
+              .join(' · ')}</div>`
+          : ''
+      }
+    </article>
+  `;
+}
+
 function escapeHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -146,6 +172,14 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function escapeAttribute(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function escapeClassName(value) {
@@ -355,6 +389,40 @@ function renderSpellcheck(result) {
   }
 }
 
+function mapReferenceSeverity(status) {
+  if (status === 'verifiziert') return 'low';
+  if (status === 'wahrscheinlich korrekt') return 'low';
+  if (status === 'unsicher') return 'medium';
+  return 'high';
+}
+
+function renderLiterature(result) {
+  const references = Array.isArray(result.references) ? result.references : [];
+  const summary = result.summary || {};
+  const topSourceTypes = Array.isArray(summary.topSourceTypes) ? summary.topSourceTypes : [];
+
+  const summaryParts = [];
+  if (summary.quickFeedback) summaryParts.push(summary.quickFeedback);
+  summaryParts.push(
+    `Verifiziert: ${summary.verified || 0}, wahrscheinlich korrekt: ${summary.probable || 0}, unsicher: ${summary.uncertain || 0}, nicht bestaetigt: ${summary.unverified || 0}.`
+  );
+  if (topSourceTypes.length) {
+    summaryParts.push(
+      `Trefferquellen: ${topSourceTypes.map((entry) => `${entry.name} (${entry.count})`).join(', ')}`
+    );
+  }
+
+  literatureStatus.textContent = summaryParts.join(' ');
+
+  if (references.length) {
+    literatureBox.classList.remove('empty-state');
+    literatureBox.innerHTML = references.map(createLiteratureItem).join('');
+  } else {
+    literatureBox.classList.add('empty-state');
+    literatureBox.textContent = 'Keine auswertbaren Literaturhinweise erkannt.';
+  }
+}
+
 async function handleAnalyze() {
   const text = normalizeText(textInput.value);
   updateTextStats();
@@ -369,10 +437,12 @@ async function handleAnalyze() {
   setStatus('loading', 'Prüfe');
   summaryText.textContent = 'Die Analyse läuft. Argumentation und Rechtschreibung werden parallel ausgewertet.';
   spellcheckStatus.textContent = 'Rechtschreibprüfung läuft ...';
+  literatureStatus.textContent = 'Literaturpruefung läuft ...';
 
-  const [analysisResult, spellcheckResult] = await Promise.allSettled([
+  const [analysisResult, spellcheckResult, literatureResult] = await Promise.allSettled([
     postJson('/api/argumentation-review', { text }),
-    postJson('/api/languagetool-check', { text, language: 'de-CH' })
+    postJson('/api/languagetool-check', { text, language: 'de-CH' }),
+    postJson('/api/literature-check', { text })
   ]);
 
   if (analysisResult.status === 'fulfilled') {
@@ -391,7 +461,20 @@ async function handleAnalyze() {
     spellcheckBox.textContent = 'Keine LanguageTool-Treffer verfügbar.';
   }
 
-  if (analysisResult.status === 'fulfilled' || spellcheckResult.status === 'fulfilled') {
+  if (literatureResult.status === 'fulfilled') {
+    renderLiterature(literatureResult.value);
+  } else {
+    literatureStatus.textContent =
+      literatureResult.reason?.message || 'Die Literaturverifikation konnte nicht geladen werden.';
+    literatureBox.classList.add('empty-state');
+    literatureBox.textContent = 'Keine Literaturtreffer verfügbar.';
+  }
+
+  if (
+    analysisResult.status === 'fulfilled' ||
+    spellcheckResult.status === 'fulfilled' ||
+    literatureResult.status === 'fulfilled'
+  ) {
     setStatus('success', 'Fertig');
   } else {
     setStatus('error', 'Fehler');
