@@ -404,7 +404,7 @@ function renderLiterature(result) {
   const summaryParts = [];
   if (summary.quickFeedback) summaryParts.push(summary.quickFeedback);
   summaryParts.push(
-    `Verifiziert: ${summary.verified || 0}, wahrscheinlich korrekt: ${summary.probable || 0}, unsicher: ${summary.uncertain || 0}, nicht bestaetigt: ${summary.unverified || 0}.`
+      `Verifiziert: ${summary.verified || 0}, wahrscheinlich korrekt: ${summary.probable || 0}, unsicher: ${summary.uncertain || 0}, nicht bestätigt: ${summary.unverified || 0}.`
   );
   if (topSourceTypes.length) {
     summaryParts.push(
@@ -437,7 +437,7 @@ async function handleAnalyze() {
   setStatus('loading', 'Prüfe');
   summaryText.textContent = 'Die Analyse läuft. Argumentation und Rechtschreibung werden parallel ausgewertet.';
   spellcheckStatus.textContent = 'Rechtschreibprüfung läuft ...';
-  literatureStatus.textContent = 'Literaturpruefung läuft ...';
+  literatureStatus.textContent = 'Literaturprüfung läuft ...';
 
   const [analysisResult, spellcheckResult, literatureResult] = await Promise.allSettled([
     postJson('/api/argumentation-review', { text }),

@@ -34,7 +34,7 @@ app.post('/api/argumentation-review', async (req, res) => {
 
   if (text.length < 120) {
     return res.status(400).json({
-      error: 'Bitte einen Text mit mindestens 120 Zeichen hochladen oder einfuegen.'
+      error: 'Bitte einen Text mit mindestens 120 Zeichen hochladen oder einfügen.'
     });
   }
 
@@ -77,7 +77,7 @@ app.post('/api/languagetool-check', async (req, res) => {
   const language = typeof req.body?.language === 'string' ? req.body.language : 'de-CH';
 
   if (!text) {
-    return res.status(400).json({ error: 'Es wurde kein Text zum Pruefen uebermittelt.' });
+    return res.status(400).json({ error: 'Es wurde kein Text zum Prüfen übermittelt.' });
   }
 
   try {
@@ -85,7 +85,7 @@ app.post('/api/languagetool-check', async (req, res) => {
     return res.json({ ok: true, ...result });
   } catch (error) {
     return res.status(502).json({
-      error: 'LanguageTool-Pruefung fehlgeschlagen.',
+      error: 'LanguageTool-Prüfung fehlgeschlagen.',
       details: error.message || 'Unbekannter Fehler'
     });
   }
@@ -95,7 +95,7 @@ app.post('/api/literature-check', async (req, res) => {
   const text = normalizeInputText(req.body?.text);
 
   if (!text) {
-    return res.status(400).json({ error: 'Es wurde kein Text zur Literaturpruefung uebermittelt.' });
+    return res.status(400).json({ error: 'Es wurde kein Text zur Literaturprüfung übermittelt.' });
   }
 
   try {
@@ -115,14 +115,14 @@ app.post('/api/extract-document', async (req, res) => {
   const base64 = typeof req.body?.base64 === 'string' ? req.body.base64 : '';
 
   if (!base64) {
-    return res.status(400).json({ error: 'Es wurde keine Datei uebermittelt.' });
+    return res.status(400).json({ error: 'Es wurde keine Datei übermittelt.' });
   }
 
   const extension = path.extname(fileName).toLowerCase();
 
   if (extension === '.doc') {
     return res.status(415).json({
-      error: 'Das alte Word-Format .doc wird noch nicht unterstuetzt. Bitte als .docx speichern und erneut hochladen.'
+      error: 'Das alte Word-Format .doc wird noch nicht unterstützt. Bitte als .docx speichern und erneut hochladen.'
     });
   }
 
@@ -130,7 +130,7 @@ app.post('/api/extract-document', async (req, res) => {
     extension !== '.docx' &&
     mimeType !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   ) {
-    return res.status(415).json({ error: 'Nur .docx-Dateien koennen hier als Word-Datei verarbeitet werden.' });
+    return res.status(415).json({ error: 'Nur .docx-Dateien können hier als Word-Datei verarbeitet werden.' });
   }
 
   try {
@@ -224,7 +224,7 @@ function clamp(value, min, max) {
 function scoreStatus(score) {
   if (score >= 75) return 'stark';
   if (score >= 50) return 'solide';
-  return 'ausbaufaehig';
+  return 'ausbaufähig';
 }
 
 function analyzeArgumentation(text) {
@@ -295,12 +295,14 @@ function analyzeArgumentation(text) {
     'insgesamt',
     'schlussendlich',
     'darum zeigt sich',
+    'somit lässt sich',
     'somit laesst sich'
   ];
   const appealMarkers = [
     'wir sollten',
     'man sollte',
     'deshalb sollten wir',
+    'es ist nötig',
     'es ist noetig',
     'es braucht',
     'ich fordere',
@@ -312,8 +314,10 @@ function analyzeArgumentation(text) {
     'eigentlich',
     'ein bisschen',
     'gewissermassen',
+    'gewissermaßen',
     'halt',
     'quasi',
+    'natürlich',
     'natuerlich'
   ];
   const emphasisMarkers = [
@@ -403,26 +407,26 @@ function analyzeArgumentation(text) {
       status: scoreStatus(thesisScore),
       observation:
         thesisScore >= 75
-          ? 'Die zentrale Position ist gut erkennbar und frueh im Text verankert.'
+          ? 'Die zentrale Position ist gut erkennbar und früh im Text verankert.'
           : thesisScore >= 50
-            ? 'Eine Position ist erkennbar, koennte aber noch deutlicher und frueher formuliert werden.'
-            : 'Die Hauptthese bleibt zu implizit oder erscheint erst spaet im Text.',
+            ? 'Eine Position ist erkennbar, könnte aber noch deutlicher und früher formuliert werden.'
+            : 'Die Hauptthese bleibt zu implizit oder erscheint erst spät im Text.',
       advice:
         'Formuliere zu Beginn einen klaren Leitsatz, auf den sich die folgenden Abschnitte sichtbar beziehen.'
     },
     {
       id: 'begruendung',
-      label: 'Begruendung und Logik',
+      label: 'Begründung und Logik',
       score: coherenceScore,
       status: scoreStatus(coherenceScore),
       observation:
         coherenceScore >= 75
           ? 'Die Gedankenschritte greifen gut ineinander und werden sprachlich verbunden.'
           : coherenceScore >= 50
-            ? 'Die Argumentation ist grundsaetzlich nachvollziehbar, wirkt aber stellenweise sprunghaft.'
-            : 'Zwischen den Aussagen fehlen verbindende Begruendungen oder klare Uebergaenge.',
+            ? 'Die Argumentation ist grundsätzlich nachvollziehbar, wirkt aber stellenweise sprunghaft.'
+            : 'Zwischen den Aussagen fehlen verbindende Begründungen oder klare Übergänge.',
       advice:
-        'Nutze mehr kausale und folgernde Verknuepfungen wie "weil", "daher" oder "folglich", um Schlussketten sichtbarer zu machen.'
+        'Nutze mehr kausale und folgernde Verknüpfungen wie "weil", "daher" oder "folglich", um Schlussketten sichtbarer zu machen.'
     },
     {
       id: 'belege',
@@ -431,12 +435,12 @@ function analyzeArgumentation(text) {
       status: scoreStatus(evidenceScore),
       observation:
         evidenceScore >= 75
-          ? 'Mehrere Beispiele oder Belege stuetzen die Aussagen ueberzeugend ab.'
+          ? 'Mehrere Beispiele oder Belege stützen die Aussagen überzeugend ab.'
           : evidenceScore >= 50
             ? 'Es gibt einzelne Beispiele, doch einige Behauptungen bleiben noch unbelegt.'
             : 'Wichtige Aussagen stehen weitgehend ohne Beispiel, Quelle oder konkreten Fall da.',
       advice:
-        'Ergaenze kritische Aussagen mit einem Beispiel, einer Zahl oder einem klar benannten Einzelfall.'
+        'Ergänze kritische Aussagen mit einem Beispiel, einer Zahl oder einem klar benannten Einzelfall.'
     },
     {
       id: 'gegenargument',
@@ -445,12 +449,12 @@ function analyzeArgumentation(text) {
       status: scoreStatus(counterScore),
       observation:
         counterScore >= 75
-          ? 'Der Text nimmt Einwaende auf und differenziert die eigene Position sichtbar.'
+          ? 'Der Text nimmt Einwände auf und differenziert die eigene Position sichtbar.'
           : counterScore >= 50
-            ? 'Ansaetze zur Differenzierung sind vorhanden, koennten aber expliziter ausgebaut werden.'
-            : 'Der Text bleibt einseitig und setzt sich kaum mit moeglichen Einwaenden auseinander.',
+            ? 'Ansätze zur Differenzierung sind vorhanden, könnten aber expliziter ausgebaut werden.'
+            : 'Der Text bleibt einseitig und setzt sich kaum mit möglichen Einwänden auseinander.',
       advice:
-        'Baue mindestens ein Gegenargument ein und entkraefte es anschliessend mit einer klaren Gewichtung.'
+        'Baue mindestens ein Gegenargument ein und entkräfte es anschliessend mit einer klaren Gewichtung.'
     },
     {
       id: 'aufbau',
@@ -459,12 +463,12 @@ function analyzeArgumentation(text) {
       status: scoreStatus(structureScore),
       observation:
         structureScore >= 75
-          ? 'Die Gliederung traegt den Gedankengang, und der Schluss buendelt das Ergebnis gut.'
+          ? 'Die Gliederung trägt den Gedankengang, und der Schluss bündelt das Ergebnis gut.'
           : structureScore >= 50
-            ? 'Der Aufbau funktioniert, koennte aber mit markanterem Schluss und klareren Abschnitten gewinnen.'
+            ? 'Der Aufbau funktioniert, könnte aber mit markanterem Schluss und klareren Abschnitten gewinnen.'
             : 'Der Text braucht eine deutlichere Gliederung mit Einleitung, Mittelteil und Schluss.',
       advice:
-        'Setze auf eine klare Dreiteilung: Ausgangsthese, argumentative Entfaltung, buendelndes Fazit.'
+        'Setze auf eine klare Dreiteilung: Ausgangsthese, argumentative Entfaltung, bündelndes Fazit.'
     },
     {
       id: 'sprache',
@@ -473,26 +477,26 @@ function analyzeArgumentation(text) {
       status: scoreStatus(languageScore),
       observation:
         languageScore >= 75
-          ? 'Der Stil wirkt adressatenbezogen und unterstuetzt die Ueberzeugungskraft des Textes.'
+          ? 'Der Stil wirkt adressatenbezogen und unterstützt die Überzeugungskraft des Textes.'
           : languageScore >= 50
-            ? 'Die Sprache ist brauchbar, koennte aber praeziser und wirkungsbewusster eingesetzt werden.'
-            : 'Der Stil bleibt noch zu allgemein oder monoton, um stark zu ueberzeugen.',
+            ? 'Die Sprache ist brauchbar, könnte aber präziser und wirkungsbewusster eingesetzt werden.'
+            : 'Der Stil bleibt noch zu allgemein oder monoton, um stark zu überzeugen.',
       advice:
-        'Schaerfe Schluesselbegriffe und setze pointierte Formulierungen gezielt statt zu oft ein.'
+        'Schärfe Schlüsselbegriffe und setze pointierte Formulierungen gezielt statt zu oft ein.'
     },
     {
       id: 'adressat',
-      label: 'Adressatenfuehrung',
+      label: 'Adressatenführung',
       score: audienceScore,
       status: scoreStatus(audienceScore),
       observation:
         audienceScore >= 75
-          ? 'Der Text fuehrt Lesende klar und wirkt argumentativ gut ausgerichtet.'
+          ? 'Der Text führt Lesende klar und wirkt argumentativ gut ausgerichtet.'
           : audienceScore >= 50
-            ? 'Der Text ist ansprechbar, koennte aber die Leserfuehrung sichtbarer machen.'
-            : 'Der Text bleibt zu allgemein und fuehrt die Lesenden noch zu wenig durch die Argumentation.',
+            ? 'Der Text ist ansprechbar, könnte aber die Leserführung sichtbarer machen.'
+            : 'Der Text bleibt zu allgemein und führt die Lesenden noch zu wenig durch die Argumentation.',
       advice:
-        'Markiere staerker, warum ein Gedankenschritt fuer die Lesenden wichtig ist und wohin er fuehrt.'
+        'Markiere stärker, warum ein Gedankenschritt für die Lesenden wichtig ist und wohin er führt.'
     }
   ];
 
@@ -536,10 +540,10 @@ function analyzeArgumentation(text) {
     overallScore,
     verdict:
       overallScore >= 80
-        ? 'Die Argumentation wirkt bereits ueberzeugend und gut strukturiert.'
+        ? 'Die Argumentation wirkt bereits überzeugend und gut strukturiert.'
         : overallScore >= 60
-          ? 'Die Argumentation ist tragfaehig, hat aber noch Ausbaupotenzial bei Praezision und Absicherung.'
-          : 'Die Grundidee ist erkennbar, braucht aber klarere Struktur und belastbarere Begruendungen.',
+          ? 'Die Argumentation ist tragfähig, hat aber noch Ausbaupotenzial bei Präzision und Absicherung.'
+          : 'Die Grundidee ist erkennbar, braucht aber klarere Struktur und belastbarere Begründungen.',
     stats: {
       characters: text.length,
       words: words.length,
@@ -592,14 +596,14 @@ function buildRewriteTemplates(scores) {
 
   if (scores.thesisScore < 70) {
     templates.push({
-      label: 'These schaerfen',
+      label: 'These schärfen',
       text: 'Meine zentrale These lautet: ..., weil ... und weil ... .'
     });
   }
 
   if (scores.evidenceScore < 70) {
     templates.push({
-      label: 'Beleg ergaenzen',
+      label: 'Beleg ergänzen',
       text: 'Das zeigt sich zum Beispiel an ..., denn dort wird deutlich, dass ... .'
     });
   }
@@ -607,21 +611,21 @@ function buildRewriteTemplates(scores) {
   if (scores.counterScore < 70) {
     templates.push({
       label: 'Gegenargument einbauen',
-      text: 'Zwar koennte man einwenden, dass ... , dennoch ueberzeugt dieses Argument weniger, weil ... .'
+      text: 'Zwar könnte man einwenden, dass ... , dennoch überzeugt dieses Argument weniger, weil ... .'
     });
   }
 
   if (scores.structureScore < 70) {
     templates.push({
       label: 'Schluss formulieren',
-      text: 'Abschliessend zeigt sich, dass ... . Deshalb ist ... ueberzeugender als ... .'
+      text: 'Abschliessend zeigt sich, dass ... . Deshalb ist ... überzeugender als ... .'
     });
   }
 
   if (scores.languageScore < 70) {
     templates.push({
-      label: 'Begruendung praezisieren',
-      text: 'Dieses Argument ueberzeugt vor allem deshalb, weil ... und dadurch ... deutlich wird.'
+      label: 'Begründung präzisieren',
+      text: 'Dieses Argument überzeugt vor allem deshalb, weil ... und dadurch ... deutlich wird.'
     });
   }
 
@@ -711,23 +715,23 @@ function analyzeParagraphs(paragraphData, markerConfig) {
       conclusion: countMarkerOccurrences(paragraph.lower, markerConfig.conclusionMarkers)
     };
 
-    let diagnosis = 'Der Abschnitt erfuellt seine Funktion grundsaetzlich.';
+    let diagnosis = 'Der Abschnitt erfüllt seine Funktion grundsätzlich.';
     let revisionGoal = 'Abschnitt sprachlich weiter zuspitzen.';
 
     if (role === 'einleitung' && markerCounts.thesis === 0) {
-      diagnosis = 'Die Einleitung fuehrt ins Thema ein, markiert die Kernthese aber noch zu wenig deutlich.';
+      diagnosis = 'Die Einleitung führt ins Thema ein, markiert die Kernthese aber noch zu wenig deutlich.';
       revisionGoal = 'In der Einleitung einen klaren Leitsatz oder Standpunkt benennen.';
     } else if (role === 'hauptteil' && markerCounts.reasons === 0) {
-      diagnosis = 'Im Hauptteil fehlt hier eine sichtbare Begruendung oder Ueberleitung.';
-      revisionGoal = 'Kausale Verknuepfung oder Begruendungssatz ergaenzen.';
+      diagnosis = 'Im Hauptteil fehlt hier eine sichtbare Begründung oder Überleitung.';
+      revisionGoal = 'Kausale Verknüpfung oder Begründungssatz ergänzen.';
     } else if (role === 'hauptteil' && markerCounts.evidence === 0 && paragraph.words >= 55) {
       diagnosis = 'Der Abschnitt behauptet viel, liefert aber noch wenig Konkretion.';
-      revisionGoal = 'Beispiel, Zahl, Beobachtung oder Quelle einfuegen.';
+      revisionGoal = 'Beispiel, Zahl, Beobachtung oder Quelle einfügen.';
     } else if (role === 'schluss' && markerCounts.conclusion === 0) {
-      diagnosis = 'Der Schluss wirkt noch offen und buendelt das Ergebnis nicht klar genug.';
+      diagnosis = 'Der Schluss wirkt noch offen und bündelt das Ergebnis nicht klar genug.';
       revisionGoal = 'Fazit markieren und die Hauptaussage pointiert abschliessen.';
     } else if (paragraph.words >= 120) {
-      diagnosis = 'Der Abschnitt ist sehr dicht und koennte fuer Lesende leichter gefuehrt werden.';
+      diagnosis = 'Der Abschnitt ist sehr dicht und könnte für Lesende leichter geführt werden.';
       revisionGoal = 'Abschnitt teilen oder einen klaren Schlusssatz setzen.';
     }
 
@@ -763,39 +767,39 @@ function buildStyleAlerts(data) {
     alerts.push({
       title: 'Wortwiederholung',
       evidence: `Das Wort "${top.word}" taucht ${top.count} Mal auf.`,
-      advice: 'Pruefe Synonyme oder fasse Wiederholungen zusammen, wenn sie nicht bewusst gesetzt sind.'
+      advice: 'Prüfe Synonyme oder fasse Wiederholungen zusammen, wenn sie nicht bewusst gesetzt sind.'
     });
   }
 
   if (data.fillerCount >= 2) {
     alerts.push({
-      title: 'Fuellwoerter',
-      evidence: `${data.fillerCount} eher weiche Formulierungen machen die Aussage unpraeziser.`,
-      advice: 'Streiche Fuellwoerter oder ersetze sie durch konkrete Aussagen.'
+      title: 'Füllwörter',
+      evidence: `${data.fillerCount} eher weiche Formulierungen machen die Aussage unpräziser.`,
+      advice: 'Streiche Füllwörter oder ersetze sie durch konkrete Aussagen.'
     });
   }
 
   if (data.passiveCount >= 2) {
     alerts.push({
       title: 'Passivformen',
-      evidence: `${data.passiveCount} Passivkonstruktionen koennen die Aussagekraft abschwaechen.`,
-      advice: 'Wo moeglich aktiv formulieren: Wer handelt? Wer begruendet?'
+      evidence: `${data.passiveCount} Passivkonstruktionen können die Aussagekraft abschwächen.`,
+      advice: 'Wo möglich aktiv formulieren: Wer handelt? Wer begründet?'
     });
   }
 
   if (data.nominalizationCount >= 8) {
     alerts.push({
       title: 'Nominalstil',
-      evidence: 'Der Text nutzt mehrere abstrakte Hauptwoerter auf -ung, -keit oder -tion.',
-      advice: 'Pruefe, ob sich manche Stellen mit starken Verben direkter formulieren lassen.'
+      evidence: 'Der Text nutzt mehrere abstrakte Hauptwörter auf -ung, -keit oder -tion.',
+      advice: 'Prüfe, ob sich manche Stellen mit starken Verben direkter formulieren lassen.'
     });
   }
 
   if (data.sentenceDiagnostics.longSentenceCount >= 2) {
     alerts.push({
-      title: 'Lange Saetze',
-      evidence: `${data.sentenceDiagnostics.longSentenceCount} Saetze sind sehr lang.`,
-      advice: 'Teile besonders verschachtelte Saetze in Hauptaussage und Begruendung auf.'
+      title: 'Lange Sätze',
+      evidence: `${data.sentenceDiagnostics.longSentenceCount} Sätze sind sehr lang.`,
+      advice: 'Teile besonders verschachtelte Sätze in Hauptaussage und Begründung auf.'
     });
   }
 
@@ -818,11 +822,11 @@ function buildPriorityActions(data) {
   });
 
   const paragraphNeed = data.paragraphDiagnostics.feedback.find((entry) =>
-    entry.diagnosis !== 'Der Abschnitt erfuellt seine Funktion grundsaetzlich.'
+    entry.diagnosis !== 'Der Abschnitt erfüllt seine Funktion grundsätzlich.'
   );
   if (paragraphNeed) {
     actions.push({
-      title: `Abschnitt ${paragraphNeed.index} ueberarbeiten`,
+      title: `Abschnitt ${paragraphNeed.index} überarbeiten`,
       severity: 'mittel',
       reason: paragraphNeed.diagnosis,
       action: paragraphNeed.revisionGoal
@@ -847,18 +851,18 @@ function buildSentenceWork(sentences, diagnostics) {
   diagnostics.diagnostics.forEach((entry) => {
     if (!entry.issueHints.length || entries.length >= 4) return;
 
-    let revisionGoal = 'Satz praezisieren.';
-    let suggestion = 'Formuliere die Hauptaussage zuerst und fuehre die Begruendung anschliessend aus.';
+    let revisionGoal = 'Satz präzisieren.';
+    let suggestion = 'Formuliere die Hauptaussage zuerst und führe die Begründung anschliessend aus.';
 
     if (entry.issueHints.includes('zu lang')) {
       revisionGoal = 'Satz aufteilen und Lesefluss verbessern.';
-      suggestion = 'Teile den Satz an der staerksten gedanklichen Zäsur in zwei Aussagen.';
+      suggestion = 'Teile den Satz an der stärksten gedanklichen Zäsur in zwei Aussagen.';
     } else if (entry.issueHints.includes('schwacher Einstieg')) {
       revisionGoal = 'Mit einer konkreten Aussage statt mit einer Vorformel starten.';
       suggestion = 'Beginne direkt mit der Behauptung oder Beobachtung statt mit "Ich finde ..."';
     } else if (entry.issueHints.includes('zu kurz')) {
-      revisionGoal = 'Satz inhaltlich staerker anbinden.';
-      suggestion = 'Ergaenze, warum diese Aussage fuer die Argumentation wichtig ist.';
+      revisionGoal = 'Satz inhaltlich stärker anbinden.';
+      suggestion = 'Ergänze, warum diese Aussage für die Argumentation wichtig ist.';
     }
 
     entries.push({
@@ -873,9 +877,9 @@ function buildSentenceWork(sentences, diagnostics) {
 }
 
 async function createAiArgumentationReview({ text, heuristic, apiKey, model }) {
-  const excerpt = text.length > 12000 ? `${text.slice(0, 12000)}\n\n[Text gekuerzt]` : text;
+  const excerpt = text.length > 12000 ? `${text.slice(0, 12000)}\n\n[Text gekürzt]` : text;
   const prompt = `
-Du bist eine praezise, konstruktive Deutschlehrperson.
+Du bist eine präzise, konstruktive Deutschlehrperson.
 Analysiere die folgende Argumentation auf Deutsch (Schweizer Standardsprache).
 Nutze die heuristischen Vorbefunde nur als Orientierung, nicht als Wahrheit.
 Antworte ausschliesslich als JSON ohne Markdown.
@@ -884,14 +888,14 @@ Schema:
 {
   "available": true,
   "used": true,
-  "summary": "2-3 Saetze",
+  "summary": "2-3 Sätze",
   "strengths": ["..."],
   "improvements": ["..."],
   "line_edits": [
     {
       "before": "kurzer problematischer Ausschnitt",
       "after": "verbesserte Formulierung",
-      "why": "kurze Begruendung"
+      "why": "kurze Begründung"
     }
   ]
 }
@@ -936,7 +940,7 @@ ${excerpt}
   try {
     parsed = JSON.parse(outputText);
   } catch {
-    throw new Error('Die KI-Antwort war kein gueltiges JSON.');
+    throw new Error('Die KI-Antwort war kein gültiges JSON.');
   }
 
   return {
@@ -1072,9 +1076,9 @@ function summarizeLanguageToolMatches(matches) {
     issueTypes: Object.fromEntries(byIssueType),
     quickFeedback:
       matches.length === 0
-        ? 'Keine auffaelligen Rechtschreib- oder Grammatiktreffer.'
+        ? 'Keine auffälligen Rechtschreib- oder Grammatiktreffer.'
         : matches.length < 6
-          ? 'Nur wenige Treffer. Eine kurze gezielte Ueberarbeitung sollte genuegen.'
+          ? 'Nur wenige Treffer. Eine kurze gezielte Überarbeitung sollte genügen.'
           : matches.length < 15
             ? 'Mehrere sprachliche Treffer. Vor der Abgabe lohnt sich eine systematische Korrekturrunde.'
             : 'Viele sprachliche Treffer. Erst die wichtigsten Fehlertypen bereinigen, dann nochmals pruefen.'
@@ -1284,7 +1288,7 @@ async function verifyUrlReference(reference) {
   if (!response.ok) {
     return finalizeReference(reference, {
       score: 25,
-      status: 'nicht bestaetigt',
+      status: 'nicht bestätigt',
       issues: [`URL antwortet mit HTTP ${response.status}.`]
     });
   }
@@ -1316,8 +1320,8 @@ async function verifyDoiReference(reference) {
   if (!item) {
     return finalizeReference(reference, {
       score: 30,
-      status: 'nicht bestaetigt',
-      issues: ['DOI konnte bei Crossref nicht bestaetigt werden.']
+      status: 'nicht bestätigt',
+      issues: ['DOI konnte bei Crossref nicht bestätigt werden.']
     });
   }
 
@@ -1338,8 +1342,8 @@ async function verifyIsbnReference(reference) {
   if (!item) {
     return finalizeReference(reference, {
       score: 28,
-      status: 'nicht bestaetigt',
-      issues: ['ISBN konnte nicht bestaetigt werden.']
+      status: 'nicht bestätigt',
+      issues: ['ISBN konnte nicht bestätigt werden.']
     });
   }
 
@@ -1370,7 +1374,7 @@ async function verifyTitleReference(reference) {
   if (!candidates.length) {
     return finalizeReference(reference, {
       score: 34,
-      status: 'nicht bestaetigt',
+      status: 'nicht bestätigt',
       issues: ['Kein belastbarer Treffer in den abgefragten Literaturquellen.']
     });
   }
@@ -1379,7 +1383,7 @@ async function verifyTitleReference(reference) {
   const status =
     best.score >= 90 ? 'verifiziert' :
       best.score >= 70 ? 'wahrscheinlich korrekt' :
-        best.score >= 45 ? 'unsicher' : 'nicht bestaetigt';
+        best.score >= 45 ? 'unsicher' : 'nicht bestätigt';
 
   return finalizeReference(reference, {
     score: best.score,
@@ -1579,10 +1583,10 @@ function summarizeReferenceResults(results) {
 
   summary.quickFeedback =
     summary.verified + summary.probable === 0
-      ? 'Keine Referenz konnte belastbar bestaetigt werden.'
+      ? 'Keine Referenz konnte belastbar bestätigt werden.'
       : summary.unverified === 0 && summary.uncertain === 0
         ? 'Die meisten erkannten Literaturhinweise wirken bibliografisch plausibel.'
-        : 'Ein Teil der Literaturhinweise ist bestaetigt, andere sollten bibliografisch nachgeschaerft werden.';
+        : 'Ein Teil der Literaturhinweise ist bestätigt, andere sollten bibliografisch nachgeschärft werden.';
 
   return summary;
 }
