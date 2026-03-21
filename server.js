@@ -353,6 +353,7 @@ function analyzeArgumentation(text) {
   const nominalizationCount = countNominalizations(words);
   const repeatedWords = findRepeatedKeywords(words);
   const sentenceDiagnostics = analyzeSentences(sentences);
+  const quoteAnalysis = analyzeQuoteUsage(text, sentences);
   const paragraphDiagnostics = analyzeParagraphs(paragraphData, {
     thesisMarkers,
     reasonMarkers,
@@ -398,6 +399,7 @@ function analyzeArgumentation(text) {
     0,
     100
   );
+  const citationScore = quoteAnalysis.score;
 
   const categories = [
     {
@@ -497,6 +499,14 @@ function analyzeArgumentation(text) {
             : 'Der Text bleibt zu allgemein und führt die Lesenden noch zu wenig durch die Argumentation.',
       advice:
         'Markiere stärker, warum ein Gedankenschritt für die Lesenden wichtig ist und wohin er führt.'
+    },
+    {
+      id: 'zitatarbeit',
+      label: 'Zitatarbeit und Quellenbezug',
+      score: citationScore,
+      status: scoreStatus(citationScore),
+      observation: quoteAnalysis.observation,
+      advice: quoteAnalysis.advice
     }
   ];
 
@@ -522,7 +532,8 @@ function analyzeArgumentation(text) {
     categories,
     paragraphDiagnostics,
     sentenceDiagnostics,
-    styleAlerts
+    styleAlerts,
+    quoteAnalysis
   });
   const sentenceWork = buildSentenceWork(sentences, sentenceDiagnostics);
 
@@ -533,7 +544,8 @@ function analyzeArgumentation(text) {
       counterScore * 0.15 +
       structureScore * 0.1 +
       languageScore * 0.05 +
-      audienceScore * 0.05
+      audienceScore * 0.05 +
+      citationScore * 0.05
   );
 
   return {
@@ -566,6 +578,7 @@ function analyzeArgumentation(text) {
     strengths: strengths.length ? strengths : ['Der Text verfolgt bereits eine erkennbare argumentative Absicht.'],
     suggestions,
     priorityActions,
+    quoteAnalysis,
     structureMap: {
       introDetected: paragraphDiagnostics.introDetected,
       conclusionDetected: paragraphDiagnostics.conclusionDetected,
@@ -586,7 +599,8 @@ function analyzeArgumentation(text) {
       evidenceScore,
       counterScore,
       structureScore,
-      languageScore
+      languageScore,
+      citationScore
     })
   };
 }
@@ -626,6 +640,17 @@ function buildRewriteTemplates(scores) {
     templates.push({
       label: 'Begründung präzisieren',
       text: 'Dieses Argument überzeugt vor allem deshalb, weil ... und dadurch ... deutlich wird.'
+    });
+  }
+
+  if (scores.citationScore < 70) {
+    templates.push({
+      label: 'Zitat einbetten',
+      text: 'Wie Autor/in X betont, „...“. Dieses Zitat ist für mein Argument wichtig, weil ... .'
+    });
+    templates.push({
+      label: 'Sinngemäss zitieren',
+      text: 'Nach Autor/in X lässt sich festhalten, dass ... . Für meinen Gedankengang ist daran entscheidend, dass ... .'
     });
   }
 
@@ -842,6 +867,10 @@ function buildPriorityActions(data) {
     });
   }
 
+  if (data.quoteAnalysis && data.quoteAnalysis.priority) {
+    actions.push(data.quoteAnalysis.priority);
+  }
+
   return actions.slice(0, 5);
 }
 
@@ -874,6 +903,159 @@ function buildSentenceWork(sentences, diagnostics) {
   });
 
   return entries;
+}
+
+function analyzeQuoteUsage(text, sentences) {
+  const literalMatches = [...text.matchAll(/[„"]([^"”“]{6,220})[”“"]/g)].map((match) => match[1].trim());
+  const sourceCuePattern =
+    /\b(?:laut|nach|vgl\.?|siehe|sinngemäss|sinngemäß|paraphrasiert|in anlehnung an|bei|gemäss|gemäß)\b/i;
+  const authorYearPattern =
+    /\b[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’.-]+(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’.-]+)?\s*\((?:19|20)\d{2}[a-z]?\)/;
+  const quoteIntroPattern =
+    /\b(?:schreibt|betont|argumentiert|erklärt|formuliert|stellt fest|hält fest|zeigt|meint|laut|nach)\b/i;
+  const quoteAnalysisPattern =
+    /\b(?:das zeigt|dies zeigt|daran wird deutlich|dadurch wird deutlich|das bedeutet|das verdeutlicht|für mein argument|für die argumentation|somit|folglich|also|darum)\b/i;
+
+  const sentenceEntries = sentences.map((sentence, index) => ({
+    index,
+    sentence,
+    hasLiteralQuote: /[„"][^"”“]{6,220}[”“"]/.test(sentence),
+    hasSourceCue: sourceCuePattern.test(sentence),
+    hasAuthorYear: authorYearPattern.test(sentence),
+    hasIntro: quoteIntroPattern.test(sentence) || /:\s*[„"]/.test(sentence),
+    hasAnalysis: quoteAnalysisPattern.test(sentence),
+    likelyParaphrase:
+      !/[„"][^"”“]{6,220}[”“"]/.test(sentence) &&
+      (sourceCuePattern.test(sentence) || authorYearPattern.test(sentence))
+  }));
+
+  const literalDetails = sentenceEntries
+    .filter((entry) => entry.hasLiteralQuote)
+    .map((entry) => {
+      const previous = sentenceEntries[entry.index - 1];
+      const next = sentenceEntries[entry.index + 1];
+      const introduced = entry.hasIntro || previous?.hasIntro || previous?.hasSourceCue || previous?.hasAuthorYear;
+      const analysed = entry.hasAnalysis || next?.hasAnalysis;
+      const issueParts = [];
+      if (!introduced) issueParts.push('Zitat wird nicht klar eingeführt.');
+      if (!analysed) issueParts.push('Zitat wird kaum ausgewertet oder angebunden.');
+      return {
+        type: 'wörtlich',
+        sentence: entry.sentence,
+        introduced,
+        analysed,
+        issue: issueParts.join(' ')
+      };
+    });
+
+  const paraphraseDetails = sentenceEntries
+    .filter((entry) => entry.likelyParaphrase)
+    .map((entry) => {
+      const next = sentenceEntries[entry.index + 1];
+      const clearlyMarked = entry.hasSourceCue || entry.hasAuthorYear;
+      const analysed = entry.hasAnalysis || next?.hasAnalysis;
+      const issueParts = [];
+      if (!clearlyMarked) issueParts.push('Sinngemässe Übernahme ist nicht klar markiert.');
+      if (!analysed) issueParts.push('Paraphrase wird nicht sichtbar auf das eigene Argument bezogen.');
+      return {
+        type: 'sinngemäss',
+        sentence: entry.sentence,
+        clearlyMarked,
+        analysed,
+        issue: issueParts.join(' ')
+      };
+    });
+
+  const literalCount = literalDetails.length;
+  const paraphraseCount = paraphraseDetails.length;
+  const sourceReferenceCount = sentenceEntries.filter((entry) => entry.hasSourceCue || entry.hasAuthorYear).length;
+  const introducedCount = literalDetails.filter((entry) => entry.introduced).length;
+  const analysedCount =
+    literalDetails.filter((entry) => entry.analysed).length +
+    paraphraseDetails.filter((entry) => entry.analysed).length;
+
+  let distinctionScore = 72;
+  let integrationScore = 72;
+
+  if (literalCount || paraphraseCount) {
+    distinctionScore = clamp(
+      35 +
+        literalCount * 10 +
+        paraphraseCount * 10 +
+        Math.min(sourceReferenceCount, 4) * 8 +
+        (literalCount && paraphraseCount ? 15 : 0),
+      0,
+      100
+    );
+
+    const totalCitations = Math.max(1, literalCount + paraphraseCount);
+    integrationScore = clamp(
+      25 +
+        Math.round((introducedCount / Math.max(1, literalCount || 1)) * 30) +
+        Math.round((analysedCount / totalCitations) * 35),
+      0,
+      100
+    );
+  }
+
+  const score = literalCount || paraphraseCount
+    ? Math.round(distinctionScore * 0.45 + integrationScore * 0.55)
+    : 72;
+
+  let observation = 'Im Text sind derzeit keine ausgeprägten Zitatstellen erkennbar. Falls mit Literatur gearbeitet wird, sollte die Zitatform sichtbar markiert werden.';
+  let advice = 'Kennzeichne wörtliche und sinngemässe Übernahmen unterschiedlich und binde jede Quelle in den eigenen Gedankengang ein.';
+
+  if (literalCount || paraphraseCount) {
+    if (score >= 75) {
+      observation = 'Die Zitatarbeit ist grundsätzlich erkennbar; Quellen werden meist klar markiert und in den Argumentgang eingebunden.';
+      advice = 'Halte die gute Praxis bei: Quelle einführen, Aussage nennen und ihre Bedeutung für das eigene Argument explizit machen.';
+    } else if (score >= 50) {
+      observation = 'Es gibt Ansätze guter Zitatarbeit, aber die Unterscheidung zwischen wörtlichem und sinngemässem Zitieren oder die Einbettung ist noch nicht immer deutlich.';
+      advice = 'Markiere wörtliche Zitate mit Anführungszeichen und sinngemässe Übernahmen mit Signalwörtern wie „nach“, „laut“ oder „sinngemäss“.';
+    } else {
+      observation = 'Zitate oder Paraphrasen stehen noch zu unverbunden im Text oder sind nicht klar als Zitatart erkennbar.';
+      advice = 'Führe jedes Zitat ein, ordne es einer Zitatform zu und erkläre unmittelbar danach seine Funktion für dein Argument.';
+    }
+  }
+
+  const findings = [];
+  literalDetails.slice(0, 3).forEach((entry) => {
+    findings.push({
+      label: 'Wörtliches Zitat',
+      sentence: entry.sentence,
+      diagnosis: entry.issue || 'Das Zitat ist erkennbar eingeführt und argumentativ eingebunden.'
+    });
+  });
+  paraphraseDetails.slice(0, 3).forEach((entry) => {
+    findings.push({
+      label: 'Sinngemässes Zitat',
+      sentence: entry.sentence,
+      diagnosis: entry.issue || 'Die paraphrasierte Quelle ist markiert und in den Gedankengang eingebettet.'
+    });
+  });
+
+  const priority =
+    (literalCount || paraphraseCount) && score < 70
+      ? {
+          title: 'Zitatarbeit klären',
+          severity: score < 45 ? 'hoch' : 'mittel',
+          reason: observation,
+          action: advice
+        }
+      : null;
+
+  return {
+    score,
+    literalCount,
+    paraphraseCount,
+    sourceReferenceCount,
+    distinctionScore,
+    integrationScore,
+    observation,
+    advice,
+    findings,
+    priority
+  };
 }
 
 async function createAiArgumentationReview({ text, heuristic, apiKey, model }) {

@@ -17,6 +17,7 @@ const spellcheckBox = document.getElementById('spellcheckBox');
 const literatureStatus = document.getElementById('literatureStatus');
 const literatureBox = document.getElementById('literatureBox');
 const paragraphBox = document.getElementById('paragraphBox');
+const quoteBox = document.getElementById('quoteBox');
 const sentenceBox = document.getElementById('sentenceBox');
 const styleBox = document.getElementById('styleBox');
 
@@ -119,6 +120,16 @@ function createSentenceWorkItem(item) {
       <p>${escapeHtml(item.revisionGoal)}</p>
       <div class="meta-line">${escapeHtml(item.suggestion)}</div>
       <div class="evidence-line">${escapeHtml(item.original)}</div>
+    </article>
+  `;
+}
+
+function createQuoteItem(item) {
+  return `
+    <article class="stack-item">
+      <strong>${escapeHtml(item.label)}</strong>
+      <p>${escapeHtml(item.diagnosis)}</p>
+      <div class="evidence-line">${escapeHtml(item.sentence || '')}</div>
     </article>
   `;
 }
@@ -272,6 +283,8 @@ function renderArgumentation(result) {
   const paragraphFeedback = Array.isArray(heuristic.structureMap?.paragraphFeedback)
     ? heuristic.structureMap.paragraphFeedback
     : [];
+  const quoteAnalysis = heuristic.quoteAnalysis || {};
+  const quoteFindings = Array.isArray(quoteAnalysis.findings) ? quoteAnalysis.findings : [];
   const sentenceWork = Array.isArray(heuristic.sentenceWork) ? heuristic.sentenceWork : [];
   const styleAlerts = Array.isArray(heuristic.styleAlerts) ? heuristic.styleAlerts : [];
 
@@ -335,6 +348,22 @@ function renderArgumentation(result) {
   } else {
     paragraphBox.classList.add('empty-state');
     paragraphBox.textContent = 'Keine Abschnittsdiagnose vorhanden.';
+  }
+
+  if (quoteFindings.length || quoteAnalysis.observation) {
+    quoteBox.classList.remove('empty-state');
+    const header = quoteAnalysis.observation
+      ? createStackItem(
+          'Überblick',
+          `${quoteAnalysis.observation} ${quoteAnalysis.advice || ''} Wörtlich: ${
+            quoteAnalysis.literalCount || 0
+          }, sinngemäss: ${quoteAnalysis.paraphraseCount || 0}.`
+        )
+      : '';
+    quoteBox.innerHTML = `${header}${quoteFindings.map(createQuoteItem).join('')}`;
+  } else {
+    quoteBox.classList.add('empty-state');
+    quoteBox.textContent = 'Keine besondere Zitatarbeit erkannt.';
   }
 
   if (sentenceWork.length) {
