@@ -9,10 +9,14 @@ const scoreRing = document.getElementById('scoreRing');
 const scoreValue = document.getElementById('scoreValue');
 const summaryText = document.getElementById('summaryText');
 const categoryGrid = document.getElementById('categoryGrid');
+const prioritiesBox = document.getElementById('prioritiesBox');
 const suggestionsBox = document.getElementById('suggestionsBox');
 const templatesBox = document.getElementById('templatesBox');
 const spellcheckStatus = document.getElementById('spellcheckStatus');
 const spellcheckBox = document.getElementById('spellcheckBox');
+const paragraphBox = document.getElementById('paragraphBox');
+const sentenceBox = document.getElementById('sentenceBox');
+const styleBox = document.getElementById('styleBox');
 
 const SAMPLE_TEXT = `Viele Schulen diskutieren derzeit, ob Handys im Unterricht grundsätzlich verboten werden sollen. Meiner Meinung nach wäre ein vollständiges Verbot zwar einfach umzusetzen, aber pädagogisch zu kurz gedacht. Einerseits lenken Smartphones ab, weil Nachrichten, Spiele und soziale Medien die Konzentration schwächen. Andererseits sind digitale Geräte längst Teil des Alltags und damit auch Teil schulischer Bildung.
 
@@ -80,6 +84,39 @@ function createTemplateItem(template) {
     <article class="template-item">
       <strong>${escapeHtml(template.label)}</strong>
       <p>${escapeHtml(template.text)}</p>
+    </article>
+  `;
+}
+
+function createPriorityItem(item) {
+  return `
+    <article class="priority-item ${escapeClassName(item.severity || 'low')}">
+      <strong>${escapeHtml(item.title)}</strong>
+      <p>${escapeHtml(item.action || '')}</p>
+      <div class="meta-line">Priorität: ${escapeHtml(item.severity || 'niedrig')}</div>
+      <div class="evidence-line">${escapeHtml(item.reason || '')}</div>
+    </article>
+  `;
+}
+
+function createParagraphItem(item) {
+  return `
+    <article class="stack-item">
+      <strong>Abschnitt ${item.index} · ${escapeHtml(item.role)}</strong>
+      <p>${escapeHtml(item.diagnosis)}</p>
+      <div class="meta-line">${escapeHtml(item.revisionGoal)}</div>
+      <div class="evidence-line">${escapeHtml(item.snippet || '')}</div>
+    </article>
+  `;
+}
+
+function createSentenceWorkItem(item) {
+  return `
+    <article class="stack-item">
+      <strong>${escapeHtml(item.issue)}</strong>
+      <p>${escapeHtml(item.revisionGoal)}</p>
+      <div class="meta-line">${escapeHtml(item.suggestion)}</div>
+      <div class="evidence-line">${escapeHtml(item.original)}</div>
     </article>
   `;
 }
@@ -197,6 +234,12 @@ function renderArgumentation(result) {
   const ai = result.ai || {};
   const categories = Array.isArray(heuristic.categories) ? heuristic.categories : [];
   const suggestions = [];
+  const priorities = Array.isArray(heuristic.priorityActions) ? heuristic.priorityActions : [];
+  const paragraphFeedback = Array.isArray(heuristic.structureMap?.paragraphFeedback)
+    ? heuristic.structureMap.paragraphFeedback
+    : [];
+  const sentenceWork = Array.isArray(heuristic.sentenceWork) ? heuristic.sentenceWork : [];
+  const styleAlerts = Array.isArray(heuristic.styleAlerts) ? heuristic.styleAlerts : [];
 
   (heuristic.suggestions || []).forEach((entry) => {
     suggestions.push({ title: 'Heuristischer Hinweis', text: entry });
@@ -228,6 +271,14 @@ function renderArgumentation(result) {
     suggestionsBox.textContent = 'Keine zusätzlichen Vorschläge vorhanden.';
   }
 
+  if (priorities.length) {
+    prioritiesBox.classList.remove('empty-state');
+    prioritiesBox.innerHTML = priorities.map(createPriorityItem).join('');
+  } else {
+    prioritiesBox.classList.add('empty-state');
+    prioritiesBox.textContent = 'Keine priorisierten Arbeitsschritte vorhanden.';
+  }
+
   const templates = [
     ...(heuristic.rewriteTemplates || []),
     ...((ai.lineEdits || []).map((entry) => ({
@@ -243,17 +294,57 @@ function renderArgumentation(result) {
     templatesBox.classList.add('empty-state');
     templatesBox.textContent = 'Keine Formulierungshilfen vorhanden.';
   }
+
+  if (paragraphFeedback.length) {
+    paragraphBox.classList.remove('empty-state');
+    paragraphBox.innerHTML = paragraphFeedback.map(createParagraphItem).join('');
+  } else {
+    paragraphBox.classList.add('empty-state');
+    paragraphBox.textContent = 'Keine Abschnittsdiagnose vorhanden.';
+  }
+
+  if (sentenceWork.length) {
+    sentenceBox.classList.remove('empty-state');
+    sentenceBox.innerHTML = sentenceWork.map(createSentenceWorkItem).join('');
+  } else {
+    sentenceBox.classList.add('empty-state');
+    sentenceBox.textContent = 'Keine Satzdiagnose vorhanden.';
+  }
+
+  if (styleAlerts.length) {
+    styleBox.classList.remove('empty-state');
+    styleBox.innerHTML = styleAlerts
+      .map((entry) => createStackItem(entry.title, `${entry.evidence} ${entry.advice}`))
+      .join('');
+  } else {
+    styleBox.classList.add('empty-state');
+    styleBox.textContent = 'Keine auffälligen Stilprobleme erkannt.';
+  }
 }
 
 function renderSpellcheck(result) {
   const matches = Array.isArray(result.matches) ? result.matches : [];
   const extras = [];
+  const summary = result.summary || {};
 
   if (result.truncated) {
     extras.push('Der Text wurde für die Prüfung in Abschnitte aufgeteilt.');
   }
 
-  spellcheckStatus.textContent = `${matches.length} Treffer gefunden${extras.length ? ` · ${extras.join(' ')}` : ''}`;
+  const topCategories = Array.isArray(summary.topCategories) ? summary.topCategories : [];
+  const summaryTextParts = [];
+
+  if (summary.quickFeedback) summaryTextParts.push(summary.quickFeedback);
+  if (topCategories.length) {
+    summaryTextParts.push(
+      `Häufigste Kategorien: ${topCategories
+        .map((entry) => `${entry.name} (${entry.count})`)
+        .join(', ')}`
+    );
+  }
+  if (extras.length) summaryTextParts.push(extras.join(' '));
+
+  spellcheckStatus.textContent = `${matches.length} Treffer gefunden. ${summaryTextParts.join(' ')}`.trim();
 
   if (matches.length) {
     spellcheckBox.classList.remove('empty-state');

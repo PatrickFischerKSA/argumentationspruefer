@@ -294,7 +294,8 @@ textarea:focus {
 
 .category-item,
 .stack-item,
-.template-item {
+.template-item,
+.priority-item {
   border-radius: var(--radius-md);
   background: var(--paper-strong);
   border: 1px solid var(--line);
@@ -310,10 +311,39 @@ textarea:focus {
 
 .category-item p,
 .stack-item p,
-.template-item p {
+.template-item p,
+.priority-item p {
   margin: 0;
   line-height: 1.55;
   color: var(--muted);
+}
+
+.priority-item {
+  border-left: 4px solid rgba(166, 64, 45, 0.3);
+}
+
+.priority-item.high {
+  border-left-color: #8f2a1a;
+}
+
+.priority-item.medium {
+  border-left-color: #c47b17;
+}
+
+.priority-item.low {
+  border-left-color: #5f6b42;
+}
+
+.meta-line {
+  margin-top: 10px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.evidence-line {
+  margin-top: 8px;
+  color: #584b41;
+  font-size: 0.93rem;
 }
 
 .category-pill {

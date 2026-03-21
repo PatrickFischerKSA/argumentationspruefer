@@ -214,6 +214,12 @@ function analyzeArgumentation(text) {
   const paragraphs = text.split(/\n\s*\n/).map((entry) => entry.trim()).filter(Boolean);
   const sentences = splitSentences(text);
   const words = splitWords(text);
+  const paragraphData = paragraphs.map((paragraph, index) => ({
+    index,
+    text: paragraph,
+    lower: paragraph.toLowerCase(),
+    words: splitWords(paragraph).length
+  }));
 
   const thesisMarkers = [
     'ich bin der meinung',
@@ -282,6 +288,24 @@ function analyzeArgumentation(text) {
     'ich fordere',
     'darum muss'
   ];
+  const fillerMarkers = [
+    'irgendwie',
+    'sozusagen',
+    'eigentlich',
+    'ein bisschen',
+    'gewissermassen',
+    'halt',
+    'quasi',
+    'natuerlich'
+  ];
+  const emphasisMarkers = [
+    'sehr',
+    'extrem',
+    'wirklich',
+    'offensichtlich',
+    'klar',
+    'eindeutig'
+  ];
 
   const firstPart = paragraphs.slice(0, Math.max(1, Math.ceil(paragraphs.length / 3))).join(' ');
   const lastPart = paragraphs.slice(-Math.max(1, Math.ceil(paragraphs.length / 3))).join(' ');
@@ -301,6 +325,27 @@ function analyzeArgumentation(text) {
   const avgParagraphLength = paragraphs.length ? words.length / paragraphs.length : words.length;
   const rhetoricalQuestions = (text.match(/\?/g) || []).length;
   const exclamations = (text.match(/!/g) || []).length;
+  const fillerCount = countMarkerOccurrences(lowerText, fillerMarkers);
+  const emphasisCount = countMarkerOccurrences(lowerText, emphasisMarkers);
+  const passiveCount = countPassivePatterns(text);
+  const nominalizationCount = countNominalizations(words);
+  const repeatedWords = findRepeatedKeywords(words);
+  const sentenceDiagnostics = analyzeSentences(sentences);
+  const paragraphDiagnostics = analyzeParagraphs(paragraphData, {
+    thesisMarkers,
+    reasonMarkers,
+    evidenceMarkers,
+    counterMarkers,
+    conclusionMarkers
+  });
+  const audienceScore = clamp(
+    35 +
+      Math.min(appealCount, 3) * 12 +
+      Math.min(rhetoricalQuestions, 2) * 8 +
+      (sentenceDiagnostics.longSentenceCount <= 2 ? 10 : 0),
+    0,
+    100
+  );
 
   const structureScore = clamp(
     30 + Math.min(paragraphs.length, 6) * 8 + Math.min(connectorCount, 6) * 5 + (conclusionCount > 0 ? 12 : 0),
@@ -416,6 +461,20 @@ function analyzeArgumentation(text) {
             : 'Der Stil bleibt noch zu allgemein oder monoton, um stark zu ueberzeugen.',
       advice:
         'Schaerfe Schluesselbegriffe und setze pointierte Formulierungen gezielt statt zu oft ein.'
+    },
+    {
+      id: 'adressat',
+      label: 'Adressatenfuehrung',
+      score: audienceScore,
+      status: scoreStatus(audienceScore),
+      observation:
+        audienceScore >= 75
+          ? 'Der Text fuehrt Lesende klar und wirkt argumentativ gut ausgerichtet.'
+          : audienceScore >= 50
+            ? 'Der Text ist ansprechbar, koennte aber die Leserfuehrung sichtbarer machen.'
+            : 'Der Text bleibt zu allgemein und fuehrt die Lesenden noch zu wenig durch die Argumentation.',
+      advice:
+        'Markiere staerker, warum ein Gedankenschritt fuer die Lesenden wichtig ist und wohin er fuehrt.'
     }
   ];
 
@@ -429,13 +488,30 @@ function analyzeArgumentation(text) {
     .slice(0, 4)
     .map((entry) => `${entry.label}: ${entry.advice}`);
 
+  const styleAlerts = buildStyleAlerts({
+    repeatedWords,
+    fillerCount,
+    emphasisCount,
+    passiveCount,
+    nominalizationCount,
+    sentenceDiagnostics
+  });
+  const priorityActions = buildPriorityActions({
+    categories,
+    paragraphDiagnostics,
+    sentenceDiagnostics,
+    styleAlerts
+  });
+  const sentenceWork = buildSentenceWork(sentences, sentenceDiagnostics);
+
   const overallScore = Math.round(
     thesisScore * 0.2 +
       coherenceScore * 0.25 +
       evidenceScore * 0.2 +
       counterScore * 0.15 +
       structureScore * 0.1 +
-      languageScore * 0.1
+      languageScore * 0.05 +
+      audienceScore * 0.05
   );
 
   return {
@@ -459,16 +535,36 @@ function analyzeArgumentation(text) {
       reasonMarkers: reasonCount,
       evidenceMarkers: evidenceCount,
       counterMarkers: counterCount,
-      conclusionMarkers: conclusionCount
+      conclusionMarkers: conclusionCount,
+      passivePatterns: passiveCount,
+      nominalizations: nominalizationCount,
+      fillerMarkers: fillerCount
     },
     categories,
     strengths: strengths.length ? strengths : ['Der Text verfolgt bereits eine erkennbare argumentative Absicht.'],
     suggestions,
+    priorityActions,
+    structureMap: {
+      introDetected: paragraphDiagnostics.introDetected,
+      conclusionDetected: paragraphDiagnostics.conclusionDetected,
+      paragraphFeedback: paragraphDiagnostics.feedback
+    },
+    sentenceWork,
+    styleAlerts,
+    languageHeuristics: {
+      repeatedWords,
+      fillerCount,
+      emphasisCount,
+      passiveCount,
+      nominalizationCount,
+      longSentenceCount: sentenceDiagnostics.longSentenceCount
+    },
     rewriteTemplates: buildRewriteTemplates({
       thesisScore,
       evidenceScore,
       counterScore,
-      structureScore
+      structureScore,
+      languageScore
     })
   };
 }
@@ -504,6 +600,13 @@ function buildRewriteTemplates(scores) {
     });
   }
 
+  if (scores.languageScore < 70) {
+    templates.push({
+      label: 'Begruendung praezisieren',
+      text: 'Dieses Argument ueberzeugt vor allem deshalb, weil ... und dadurch ... deutlich wird.'
+    });
+  }
+
   if (!templates.length) {
     templates.push({
       label: 'Stil verdichten',
@@ -512,6 +615,243 @@ function buildRewriteTemplates(scores) {
   }
 
   return templates;
+}
+
+function countPassivePatterns(text) {
+  const matches = text.match(/\b(?:wird|werden|wurde|wurden|worden)\s+[A-Za-zÀ-ÖØ-öø-ÿÄÖÜäöüß]+(?:t|en)\b/gi);
+  return matches ? matches.length : 0;
+}
+
+function countNominalizations(words) {
+  return words.filter((word) => /(?:ung|keit|heit|tion|ismus|tät)$/i.test(word)).length;
+}
+
+function findRepeatedKeywords(words) {
+  const stopwords = new Set([
+    'und', 'oder', 'aber', 'doch', 'denn', 'weil', 'dass', 'das', 'die', 'der', 'dem', 'den',
+    'ein', 'eine', 'einer', 'einem', 'einen', 'ist', 'sind', 'war', 'waren', 'wie', 'mit',
+    'auch', 'nicht', 'noch', 'nur', 'schon', 'sehr', 'mehr', 'wenn', 'dann', 'man', 'wir',
+    'sie', 'ich', 'du', 'er', 'es', 'zu', 'im', 'in', 'am', 'an', 'auf', 'fuer', 'für', 'von',
+    'des', 'so', 'als', 'bei', 'aus', 'einerseits', 'andererseits', 'dies', 'diese', 'dieser'
+  ]);
+
+  const counts = new Map();
+  words.forEach((raw) => {
+    const word = raw.toLowerCase();
+    if (word.length < 5 || stopwords.has(word)) return;
+    counts.set(word, (counts.get(word) || 0) + 1);
+  });
+
+  return [...counts.entries()]
+    .filter(([, count]) => count >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([word, count]) => ({ word, count }));
+}
+
+function analyzeSentences(sentences) {
+  const diagnostics = sentences.map((sentence, index) => {
+    const wordCount = splitWords(sentence).length;
+    const lower = sentence.toLowerCase();
+    const hasWeakStart = /^(ich finde|man sieht|es ist|es gibt|ich denke|meiner meinung nach)/i.test(sentence);
+    const hasEnumeration = /\b(?:erstens|zweitens|drittens|zum einen|zum anderen)\b/i.test(sentence);
+    const hasQuote = /["„].+["”]/.test(sentence);
+    const issueHints = [];
+
+    if (wordCount >= 30) issueHints.push('zu lang');
+    if (wordCount <= 5) issueHints.push('zu kurz');
+    if (hasWeakStart) issueHints.push('schwacher Einstieg');
+    if (lower.includes('weil') && !/[,:;]/.test(sentence) && wordCount >= 24) issueHints.push('verschachtelt');
+
+    return {
+      index,
+      sentence,
+      wordCount,
+      hasWeakStart,
+      hasEnumeration,
+      hasQuote,
+      issueHints
+    };
+  });
+
+  return {
+    diagnostics,
+    longSentenceCount: diagnostics.filter((entry) => entry.wordCount >= 30).length,
+    shortSentenceCount: diagnostics.filter((entry) => entry.wordCount <= 5).length,
+    weakStartCount: diagnostics.filter((entry) => entry.hasWeakStart).length
+  };
+}
+
+function analyzeParagraphs(paragraphData, markerConfig) {
+  const feedback = paragraphData.map((paragraph, index) => {
+    const role = determineParagraphRole(index, paragraphData.length, paragraph.lower, markerConfig);
+    const markerCounts = {
+      thesis: countMarkerOccurrences(paragraph.lower, markerConfig.thesisMarkers),
+      reasons: countMarkerOccurrences(paragraph.lower, markerConfig.reasonMarkers),
+      evidence: countMarkerOccurrences(paragraph.lower, markerConfig.evidenceMarkers),
+      counter: countMarkerOccurrences(paragraph.lower, markerConfig.counterMarkers),
+      conclusion: countMarkerOccurrences(paragraph.lower, markerConfig.conclusionMarkers)
+    };
+
+    let diagnosis = 'Der Abschnitt erfuellt seine Funktion grundsaetzlich.';
+    let revisionGoal = 'Abschnitt sprachlich weiter zuspitzen.';
+
+    if (role === 'einleitung' && markerCounts.thesis === 0) {
+      diagnosis = 'Die Einleitung fuehrt ins Thema ein, markiert die Kernthese aber noch zu wenig deutlich.';
+      revisionGoal = 'In der Einleitung einen klaren Leitsatz oder Standpunkt benennen.';
+    } else if (role === 'hauptteil' && markerCounts.reasons === 0) {
+      diagnosis = 'Im Hauptteil fehlt hier eine sichtbare Begruendung oder Ueberleitung.';
+      revisionGoal = 'Kausale Verknuepfung oder Begruendungssatz ergaenzen.';
+    } else if (role === 'hauptteil' && markerCounts.evidence === 0 && paragraph.words >= 55) {
+      diagnosis = 'Der Abschnitt behauptet viel, liefert aber noch wenig Konkretion.';
+      revisionGoal = 'Beispiel, Zahl, Beobachtung oder Quelle einfuegen.';
+    } else if (role === 'schluss' && markerCounts.conclusion === 0) {
+      diagnosis = 'Der Schluss wirkt noch offen und buendelt das Ergebnis nicht klar genug.';
+      revisionGoal = 'Fazit markieren und die Hauptaussage pointiert abschliessen.';
+    } else if (paragraph.words >= 120) {
+      diagnosis = 'Der Abschnitt ist sehr dicht und koennte fuer Lesende leichter gefuehrt werden.';
+      revisionGoal = 'Abschnitt teilen oder einen klaren Schlusssatz setzen.';
+    }
+
+    return {
+      index: index + 1,
+      role,
+      snippet: paragraph.text.slice(0, 160),
+      diagnosis,
+      revisionGoal,
+      markerCounts
+    };
+  });
+
+  return {
+    introDetected: feedback.some((entry) => entry.role === 'einleitung'),
+    conclusionDetected: feedback.some((entry) => entry.role === 'schluss'),
+    feedback
+  };
+}
+
+function determineParagraphRole(index, total, lowerParagraph, markerConfig) {
+  if (index === 0) return 'einleitung';
+  if (index === total - 1) return 'schluss';
+  if (countMarkerOccurrences(lowerParagraph, markerConfig.conclusionMarkers) > 0) return 'schluss';
+  return 'hauptteil';
+}
+
+function buildStyleAlerts(data) {
+  const alerts = [];
+
+  if (data.repeatedWords.length) {
+    const top = data.repeatedWords[0];
+    alerts.push({
+      title: 'Wortwiederholung',
+      evidence: `Das Wort "${top.word}" taucht ${top.count} Mal auf.`,
+      advice: 'Pruefe Synonyme oder fasse Wiederholungen zusammen, wenn sie nicht bewusst gesetzt sind.'
+    });
+  }
+
+  if (data.fillerCount >= 2) {
+    alerts.push({
+      title: 'Fuellwoerter',
+      evidence: `${data.fillerCount} eher weiche Formulierungen machen die Aussage unpraeziser.`,
+      advice: 'Streiche Fuellwoerter oder ersetze sie durch konkrete Aussagen.'
+    });
+  }
+
+  if (data.passiveCount >= 2) {
+    alerts.push({
+      title: 'Passivformen',
+      evidence: `${data.passiveCount} Passivkonstruktionen koennen die Aussagekraft abschwaechen.`,
+      advice: 'Wo moeglich aktiv formulieren: Wer handelt? Wer begruendet?'
+    });
+  }
+
+  if (data.nominalizationCount >= 8) {
+    alerts.push({
+      title: 'Nominalstil',
+      evidence: 'Der Text nutzt mehrere abstrakte Hauptwoerter auf -ung, -keit oder -tion.',
+      advice: 'Pruefe, ob sich manche Stellen mit starken Verben direkter formulieren lassen.'
+    });
+  }
+
+  if (data.sentenceDiagnostics.longSentenceCount >= 2) {
+    alerts.push({
+      title: 'Lange Saetze',
+      evidence: `${data.sentenceDiagnostics.longSentenceCount} Saetze sind sehr lang.`,
+      advice: 'Teile besonders verschachtelte Saetze in Hauptaussage und Begruendung auf.'
+    });
+  }
+
+  return alerts;
+}
+
+function buildPriorityActions(data) {
+  const actions = [];
+  const weakestCategories = [...data.categories]
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 3);
+
+  weakestCategories.forEach((category) => {
+    actions.push({
+      title: category.label,
+      severity: category.score < 45 ? 'hoch' : category.score < 65 ? 'mittel' : 'niedrig',
+      reason: category.observation,
+      action: category.advice
+    });
+  });
+
+  const paragraphNeed = data.paragraphDiagnostics.feedback.find((entry) =>
+    entry.diagnosis !== 'Der Abschnitt erfuellt seine Funktion grundsaetzlich.'
+  );
+  if (paragraphNeed) {
+    actions.push({
+      title: `Abschnitt ${paragraphNeed.index} ueberarbeiten`,
+      severity: 'mittel',
+      reason: paragraphNeed.diagnosis,
+      action: paragraphNeed.revisionGoal
+    });
+  }
+
+  if (data.styleAlerts[0]) {
+    actions.push({
+      title: data.styleAlerts[0].title,
+      severity: 'niedrig',
+      reason: data.styleAlerts[0].evidence,
+      action: data.styleAlerts[0].advice
+    });
+  }
+
+  return actions.slice(0, 5);
+}
+
+function buildSentenceWork(sentences, diagnostics) {
+  const entries = [];
+
+  diagnostics.diagnostics.forEach((entry) => {
+    if (!entry.issueHints.length || entries.length >= 4) return;
+
+    let revisionGoal = 'Satz praezisieren.';
+    let suggestion = 'Formuliere die Hauptaussage zuerst und fuehre die Begruendung anschliessend aus.';
+
+    if (entry.issueHints.includes('zu lang')) {
+      revisionGoal = 'Satz aufteilen und Lesefluss verbessern.';
+      suggestion = 'Teile den Satz an der staerksten gedanklichen Zäsur in zwei Aussagen.';
+    } else if (entry.issueHints.includes('schwacher Einstieg')) {
+      revisionGoal = 'Mit einer konkreten Aussage statt mit einer Vorformel starten.';
+      suggestion = 'Beginne direkt mit der Behauptung oder Beobachtung statt mit "Ich finde ..."';
+    } else if (entry.issueHints.includes('zu kurz')) {
+      revisionGoal = 'Satz inhaltlich staerker anbinden.';
+      suggestion = 'Ergaenze, warum diese Aussage fuer die Argumentation wichtig ist.';
+    }
+
+    entries.push({
+      original: entry.sentence,
+      issue: entry.issueHints.join(', '),
+      revisionGoal,
+      suggestion
+    });
+  });
+
+  return entries;
 }
 
 async function createAiArgumentationReview({ text, heuristic, apiKey, model }) {
@@ -682,7 +1022,44 @@ async function runLanguageToolCheck(text, options = {}) {
     chunkCount: chunks.length,
     matchCount: matches.length,
     truncated: text.length > chunks.reduce((sum, chunk) => sum + chunk.text.length, 0),
+    summary: summarizeLanguageToolMatches(matches),
     matches: matches.slice(0, 80)
+  };
+}
+
+function summarizeLanguageToolMatches(matches) {
+  const byCategory = new Map();
+  const byIssueType = new Map();
+
+  matches.forEach((match) => {
+    const categoryName = match.category?.name || 'Sonstige Hinweise';
+    const issueType = match.issueType || 'other';
+    byCategory.set(categoryName, (byCategory.get(categoryName) || 0) + 1);
+    byIssueType.set(issueType, (byIssueType.get(issueType) || 0) + 1);
+  });
+
+  const topCategories = [...byCategory.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([name, count]) => ({ name, count }));
+
+  const severity =
+    matches.length >= 18 ? 'hoch' :
+      matches.length >= 8 ? 'mittel' :
+        matches.length > 0 ? 'niedrig' : 'keine';
+
+  return {
+    severity,
+    topCategories,
+    issueTypes: Object.fromEntries(byIssueType),
+    quickFeedback:
+      matches.length === 0
+        ? 'Keine auffaelligen Rechtschreib- oder Grammatiktreffer.'
+        : matches.length < 6
+          ? 'Nur wenige Treffer. Eine kurze gezielte Ueberarbeitung sollte genuegen.'
+          : matches.length < 15
+            ? 'Mehrere sprachliche Treffer. Vor der Abgabe lohnt sich eine systematische Korrekturrunde.'
+            : 'Viele sprachliche Treffer. Erst die wichtigsten Fehlertypen bereinigen, dann nochmals pruefen.'
   };
 }
 
